@@ -13,7 +13,10 @@ import tempfile
 import sqlite3
 from operator import or_
 
-LOGFILE = "/home/melpa/log/melpa.access.log"
+STABLE = os.getenv("STABLE")
+LOGFILE = "/mnt/store/log/melpa.access.log"
+if STABLE:
+    LOGFILE = "/mnt/store/log-stable/melpa.access.log"
 LOGREGEX = r'(?P<ip>[\d.]+) [ -]+ \[(?P<date>[\w/: +-]+)\] ' \
            r'"GET /packages/(?P<package>[^ ]+)-[0-9.]+.(?:el|tar) ' \
            r'HTTP/\d.\d" 200'
@@ -97,7 +100,7 @@ def main():
     args = parser.parse_args()
 
     pid = str(os.getpid())
-    pidfile = os.path.join(os.path.join(tempfile.gettempdir(), "process_log.pid"))
+    pidfile = "process_log.pid"
 
     if os.access(pidfile, os.F_OK):
         running_pid = open(pidfile, "r").readline()
@@ -111,9 +114,12 @@ def main():
             os.unlink(pidfile)
 
     file(pidfile, 'w').write(pid)
+    db_filename = "download_log.db"
+    if STABLE:
+        db_filename = "download_log_stable.db"
 
-    new_db = not os.path.exists("download_log.db")
-    conn = sqlite3.connect("download_log.db")
+    new_db = not os.path.exists(db_filename)
+    conn = sqlite3.connect(db_filename)
     curs = conn.cursor()
     if new_db:
         sys.stdout.write("creating database...\n")
@@ -131,7 +137,10 @@ def main():
 
     # calculate current package totals
     pkgcount = {p: c for p,c in curs.execute("SELECT package, count(ip) FROM pkg_ip GROUP BY 1")}
-    json_dump(pkgcount, open("html/download_counts.json", 'w'), indent=1)
+    if STABLE:
+        json_dump(pkgcount, open("html/download_counts.json", 'w'), indent=1)
+    else:
+        json_dump(pkgcount, open("html-stable/download_counts.json", 'w'), indent=1)
 
     os.unlink(pidfile)
     return 0
