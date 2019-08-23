@@ -1,0 +1,3 @@
+(ampl-mode :repo "ax487/ampl-mode"
+           :fetcher github
+           :files ("emacs/*.el"))
