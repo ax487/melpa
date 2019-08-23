@@ -9,17 +9,21 @@ PKGDIR  := packages
 RCPDIR  := recipes
 HTMLDIR := html
 WORKDIR := working
-WEBROOT := $$HOME/www
 SLEEP   ?= 0
 SANDBOX := sandbox
 STABLE  ?= nil
+ifneq ($(STABLE), nil)
+PKGDIR  := packages-stable
+HTMLDIR := html-stable
+endif
 
 LISP_CONFIG ?= '(progn\
   (setq package-build-working-dir "$(TOP)/$(WORKDIR)/")\
   (setq package-build-archive-dir "$(TOP)/$(PKGDIR)/")\
   (setq package-build-recipes-dir "$(TOP)/$(RCPDIR)/")\
   (setq package-build-stable $(STABLE))\
-  (setq package-build-write-melpa-badge-images t))'
+  (setq package-build-write-melpa-badge-images t)\
+  (setq package-build-timeout-secs (when (string= "linux" (symbol-name system-type)) 600)))'
 
 LOAD_PATH ?= $(TOP)/package-build
 
@@ -51,7 +55,7 @@ clean-packages:
 
 clean-json:
 	@echo " • Removing json files ..."
-	@-rm -vf html/archive.json html/recipes.json
+	@-rm -vf $(HTMLDIR)/archive.json $(HTMLDIR)/recipes.json
 
 clean-sandbox:
 	@echo " • Removing sandbox files ..."
@@ -59,13 +63,6 @@ clean-sandbox:
 		rm -rfv '$(SANDBOX)/elpa'; \
 		rmdir '$(SANDBOX)'; \
 	fi
-
-sync:
-	@echo " • Synchronizing files ..."
-	@rsync -avz --delete $(PKGDIR)/ $(WEBROOT)/packages
-	@rsync -avz --safe-links --delete $(HTMLDIR)/* $(WEBROOT)/
-	@chmod -R go+rx $(WEBROOT)/packages/*
-
 
 pull-package-build:
 	git subtree pull --squash -P package-build package-build master
@@ -93,7 +90,15 @@ html/recipes.json: $(RCPDIR)/.dirstamp
 	@echo " • Building $@ ..."
 	@$(EVAL) '(package-build-recipe-alist-as-json "html/recipes.json")'
 
-json: html/archive.json html/recipes.json
+html-stable/archive.json: $(PKGDIR)/archive-contents
+	@echo " • Building $@ ..."
+	@$(EVAL) '(package-build-archive-alist-as-json "html-stable/archive.json")'
+
+html-stable/recipes.json: $(RCPDIR)/.dirstamp
+	@echo " • Building $@ ..."
+	@$(EVAL) '(package-build-recipe-alist-as-json "html-stable/recipes.json")'
+
+json: $(HTMLDIR)/archive.json $(HTMLDIR)/recipes.json
 
 $(RCPDIR)/.dirstamp: .FORCE
 	@[[ ! -e $@ || "$$(find $(@D) -newer $@ -print -quit)" != "" ]] \
@@ -117,13 +122,15 @@ sandbox: packages/archive-contents
 	@$(EMACS_COMMAND) -Q \
 		--eval '(setq user-emacs-directory (file-truename "$(SANDBOX)"))' \
 		-l package \
-		--eval "(add-to-list 'package-archives '(\"gnu\" . \"http://elpa.gnu.org/packages/\") t)" \
+		--eval "(add-to-list 'package-archives '(\"gnu\" . \"https://elpa.gnu.org/packages/\") t)" \
 		--eval "(add-to-list 'package-archives '(\"melpa\" . \"https://melpa.org/packages/\") t)" \
 		--eval "(add-to-list 'package-archives '(\"sandbox\" . \"$(TOP)/$(PKGDIR)/\") t)" \
 		--eval "(package-refresh-contents)" \
 		--eval "(package-initialize)" \
 		--eval '(setq sandbox-install-package "$(INSTALL)")' \
-		--eval "(unless (string= \"\" sandbox-install-package) (package-install (intern sandbox-install-package)))"
+		--eval "(unless (string= \"\" sandbox-install-package) (package-install (intern sandbox-install-package)))" \
+		--eval "(when (get-buffer \"*Compile-Log*\") (display-buffer \"*Compile-Log*\"))"
+
 
 .PHONY: clean build index html json sandbox
 .FORCE:
